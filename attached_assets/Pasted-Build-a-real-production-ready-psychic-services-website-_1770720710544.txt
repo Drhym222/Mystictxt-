@@ -1,0 +1,111 @@
+Build a real production-ready psychic services website named “MysticTxt” with PayPal + Apple Pay + Google Pay.
+
+GOAL
+- Public website that markets and sells psychic services.
+- Services are listed with full details, pricing, delivery time, and what the customer receives.
+- Customers can pay using:
+  - Stripe (cards + Apple Pay + Google Pay)
+  - PayPal (PayPal checkout)
+- After payment, customer gets an order confirmation and can submit their reading details (name, DOB optional, question, etc).
+- Admin can log in separately to manage services, orders, and content.
+
+TECH STACK
+- Frontend: Next.js (React) + Tailwind CSS (fast, modern, SEO-friendly)
+- Backend: Next.js API routes or Node.js + Express (choose Next.js API routes for simplicity)
+- Database: PostgreSQL (recommended) or SQLite for MVP
+- Payments:
+  - Stripe for Apple Pay + Google Pay + cards
+  - PayPal Checkout as an additional payment method
+- Email: Resend or SendGrid (order confirmations + admin notifications)
+- Hosting: Vercel (frontend) + Render/Railway (DB) or Vercel Postgres
+
+SITE STRUCTURE
+- /
+  - Hero section, trust badges, featured services, testimonials
+- /services
+  - Service listings grid
+- /services/[slug]
+  - Service details page (full description, price, delivery time, what’s included)
+- /checkout
+  - Stripe + PayPal payment options
+- /order/[id]
+  - Secure order intake form (customer submits their question/details after purchase)
+- /faq
+- /contact
+- /terms
+- /privacy
+
+SERVICES TO LIST (initial)
+1) Psychic Reading
+2) Telepathy Mind Reading
+3) Telepathy Mind Implants
+Each listing must include:
+- Title
+- Short summary
+- Long description
+- What the client must provide
+- What they receive
+- Delivery time (e.g., 24h, 48h)
+- Price
+- Optional add-ons (rush delivery, extra questions)
+
+ADMIN PORTAL (separate login)
+- /admin/login
+- /admin/dashboard (stats: orders, revenue, pending)
+- /admin/services (CRUD: create/edit/delete services, prices, delivery times)
+- /admin/orders (view orders, status: pending/in_progress/delivered, customer email, payment status)
+- /admin/content (edit FAQ, homepage sections, testimonials)
+- Admin can mark orders as delivered and send “delivery email” to customer
+
+PAYMENTS (REAL, SECURE)
+Stripe:
+- Create PaymentIntent/Checkout Session for service purchase
+- Enable Apple Pay + Google Pay through Stripe
+PayPal:
+- Create PayPal order on server
+- Capture payment on server
+Webhooks:
+- Stripe webhook to confirm paid orders
+- PayPal webhook (or server capture verification) to confirm paid orders
+Rules:
+- Never trust client-side payment success
+- Only create/mark orders as paid after verified server confirmation
+
+DATABASE MODELS
+- users(id, email, password_hash, role=admin)
+- services(id, slug, title, short_desc, long_desc, price_cents, currency, delivery_hours, includes_json, requirements_json, active)
+- orders(id, service_id, customer_email, status, payment_provider, payment_status, amount_cents, currency, created_at)
+- order_intake(id, order_id, full_name, dob_optional, question, details_json, created_at)
+- testimonials(id, name, text, rating, active)
+
+USER FLOW
+- Customer browses services -> opens a service -> clicks Buy -> pays (Stripe Apple/Google Pay or PayPal)
+- After payment -> redirected to Order Intake page -> fills question/details -> submit
+- Customer gets confirmation email
+- Admin gets notification email
+- Admin delivers and marks delivered (optional upload a PDF/text response and email it)
+
+SEO & TRUST
+- Good page titles/meta descriptions
+- Sitemap and robots.txt
+- Clear refund policy page
+- Clear terms and privacy
+
+RUN INSTRUCTIONS
+- npm install
+- setup .env with:
+  - DATABASE_URL
+  - STRIPE_SECRET_KEY
+  - STRIPE_WEBHOOK_SECRET
+  - PAYPAL_CLIENT_ID
+  - PAYPAL_SECRET
+  - EMAIL_API_KEY
+  - BASE_URL
+- npm run dev
+- deployment instructions for Vercel + DB + webhook URLs
+
+UI STYLE
+- Dark theme, clean, modern
+- Brand name: MysticTxt
+- Simple navigation, strong typography, mobile-first
+- Service cards similar to a marketplace listing style
