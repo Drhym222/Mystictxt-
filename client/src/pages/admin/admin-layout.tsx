@@ -1,16 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, Redirect } from "wouter";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
 import { LayoutDashboard, Package, ShoppingCart, LogOut, Sparkles, ChevronLeft, MessageCircle, FileText } from "lucide-react";
-import type { User } from "@shared/schema";
+import type { User, ChatSession } from "@shared/schema";
 
 const adminLinks = [
   { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/services", label: "Services", icon: Package },
   { href: "/admin/orders", label: "Orders", icon: ShoppingCart },
-  { href: "/admin/live-sessions", label: "Live Sessions", icon: MessageCircle },
+  { href: "/admin/live-sessions", label: "Live Chat", icon: MessageCircle },
   { href: "/admin/content", label: "Content", icon: FileText },
 ];
 
@@ -21,6 +22,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     queryKey: ["/api/admin/me"],
     queryFn: getQueryFn({ on401: "returnNull" }),
   });
+
+  const { data: sessions } = useQuery<ChatSession[]>({
+    queryKey: ["/api/admin/live-sessions"],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    enabled: !!user,
+    refetchInterval: 5000,
+  });
+
+  const pendingCount = sessions?.filter((s) => s.status === "pending").length ?? 0;
 
   const handleLogout = async () => {
     await apiRequest("POST", "/api/admin/logout");
@@ -63,16 +73,26 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 variant={location === l.href ? "secondary" : "ghost"}
                 className="w-full justify-start"
                 size="sm"
-                data-testid={`link-admin-${l.label.toLowerCase()}`}
+                data-testid={`link-admin-${l.label.toLowerCase().replace(/\s/g, "-")}`}
               >
                 <l.icon className="mr-2 h-4 w-4" />
                 {l.label}
+                {l.href === "/admin/live-sessions" && pendingCount > 0 && (
+                  <Badge
+                    variant="destructive"
+                    className="ml-auto no-default-hover-elevate no-default-active-elevate"
+                    data-testid="badge-pending-count"
+                  >
+                    {pendingCount}
+                  </Badge>
+                )}
               </Button>
             </Link>
           ))}
         </nav>
 
         <div className="mt-auto p-2">
+          <p className="mb-2 px-3 text-xs text-muted-foreground truncate">{user.email}</p>
           <Button
             variant="ghost"
             size="sm"

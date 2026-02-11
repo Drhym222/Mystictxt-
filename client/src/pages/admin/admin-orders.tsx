@@ -12,21 +12,23 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Mail, Clock } from "lucide-react";
+import { Mail, Clock, XCircle, RotateCcw } from "lucide-react";
 import type { Order } from "@shared/schema";
 
 type OrderWithService = Order & { serviceTitle?: string };
 
-function statusColor(status: string) {
+function statusColor(status: string): "default" | "secondary" | "outline" | "destructive" {
   switch (status) {
     case "pending": return "secondary";
     case "in_progress": return "default";
     case "delivered": return "outline";
+    case "cancelled": return "destructive";
+    case "refunded": return "destructive";
     default: return "secondary";
   }
 }
 
-function paymentColor(status: string) {
+function paymentColor(status: string): "default" | "destructive" | "secondary" {
   switch (status) {
     case "paid": return "default";
     case "unpaid": return "destructive";
@@ -51,12 +53,15 @@ export default function AdminOrders() {
     },
   });
 
+  const activeOrders = orders?.filter((o) => !["cancelled", "refunded"].includes(o.status)) ?? [];
+  const closedOrders = orders?.filter((o) => ["cancelled", "refunded"].includes(o.status)) ?? [];
+
   return (
     <div>
       <h1 className="font-serif text-2xl font-bold" data-testid="text-admin-orders-title">
         Orders
       </h1>
-      <p className="mt-1 text-sm text-muted-foreground">Manage customer orders and deliveries</p>
+      <p className="mt-1 text-sm text-muted-foreground">Manage customer orders, process refunds and cancellations</p>
 
       <div className="mt-6 space-y-3">
         {isLoading
@@ -66,63 +71,146 @@ export default function AdminOrders() {
                 <Skeleton className="h-4 w-full" />
               </Card>
             ))
-          : orders?.length === 0 ? (
-              <Card className="p-8 text-center">
-                <p className="text-muted-foreground">No orders yet</p>
-              </Card>
-            ) : (
-              orders?.map((order) => (
-                <Card
-                  key={order.id}
-                  className="p-4"
-                  data-testid={`card-admin-order-${order.id}`}
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-medium">Order #{order.id}</p>
-                        <Badge variant={statusColor(order.status)} className="capitalize">
-                          {order.status.replace("_", " ")}
-                        </Badge>
-                        <Badge variant={paymentColor(order.paymentStatus)}>
-                          {order.paymentStatus}
-                        </Badge>
+          : (
+            <>
+              <h2 className="text-sm font-semibold text-muted-foreground" data-testid="text-active-orders-heading">
+                Active Orders ({activeOrders.length})
+              </h2>
+              {activeOrders.length === 0 ? (
+                <Card className="p-6 text-center text-sm text-muted-foreground">No active orders</Card>
+              ) : (
+                activeOrders.map((order) => (
+                  <Card
+                    key={order.id}
+                    className="p-4"
+                    data-testid={`card-admin-order-${order.id}`}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-medium">Order #{order.id}</p>
+                          <Badge variant={statusColor(order.status)} className="capitalize">
+                            {order.status.replace("_", " ")}
+                          </Badge>
+                          <Badge variant={paymentColor(order.paymentStatus)}>
+                            {order.paymentStatus}
+                          </Badge>
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <Mail className="h-3.5 w-3.5" />
+                            {order.customerEmail}
+                          </span>
+                          {order.serviceTitle && (
+                            <span>{order.serviceTitle}</span>
+                          )}
+                          <span className="flex items-center gap-1">
+                            <Clock className="h-3.5 w-3.5" />
+                            {new Date(order.createdAt).toLocaleDateString()}
+                          </span>
+                          <span className="font-medium">
+                            ${(order.amountCents / 100).toFixed(2)}
+                          </span>
+                        </div>
                       </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <Mail className="h-3.5 w-3.5" />
-                          {order.customerEmail}
-                        </span>
-                        {order.serviceTitle && (
-                          <span>{order.serviceTitle}</span>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Select
+                          value={order.status}
+                          onValueChange={(val) => updateStatus.mutate({ id: order.id, status: val })}
+                        >
+                          <SelectTrigger className="w-36" data-testid={`select-status-${order.id}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="pending">Pending</SelectItem>
+                            <SelectItem value="in_progress">In Progress</SelectItem>
+                            <SelectItem value="delivered">Delivered</SelectItem>
+                          </SelectContent>
+                        </Select>
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => updateStatus.mutate({ id: order.id, status: "cancelled" })}
+                          disabled={updateStatus.isPending}
+                          data-testid={`button-cancel-${order.id}`}
+                        >
+                          <XCircle className="mr-1 h-3.5 w-3.5" />
+                          Cancel
+                        </Button>
+
+                        {order.paymentStatus === "paid" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => updateStatus.mutate({ id: order.id, status: "refunded" })}
+                            disabled={updateStatus.isPending}
+                            data-testid={`button-refund-${order.id}`}
+                          >
+                            <RotateCcw className="mr-1 h-3.5 w-3.5" />
+                            Refund
+                          </Button>
                         )}
-                        <span className="flex items-center gap-1">
-                          <Clock className="h-3.5 w-3.5" />
-                          {new Date(order.createdAt).toLocaleDateString()}
-                        </span>
-                        <span className="font-medium">
-                          ${(order.amountCents / 100).toFixed(2)}
-                        </span>
                       </div>
                     </div>
+                  </Card>
+                ))
+              )}
 
-                    <Select
-                      value={order.status}
-                      onValueChange={(val) => updateStatus.mutate({ id: order.id, status: val })}
+              {closedOrders.length > 0 && (
+                <>
+                  <h2 className="mt-6 text-sm font-semibold text-muted-foreground" data-testid="text-closed-orders-heading">
+                    Cancelled / Refunded ({closedOrders.length})
+                  </h2>
+                  {closedOrders.map((order) => (
+                    <Card
+                      key={order.id}
+                      className="p-4 opacity-70"
+                      data-testid={`card-admin-order-${order.id}`}
                     >
-                      <SelectTrigger className="w-36" data-testid={`select-status-${order.id}`}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="pending">Pending</SelectItem>
-                        <SelectItem value="in_progress">In Progress</SelectItem>
-                        <SelectItem value="delivered">Delivered</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </Card>
-              ))
-            )}
+                      <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-medium">Order #{order.id}</p>
+                            <Badge variant="destructive" className="capitalize">
+                              {order.status}
+                            </Badge>
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <Mail className="h-3.5 w-3.5" />
+                              {order.customerEmail}
+                            </span>
+                            {order.serviceTitle && (
+                              <span>{order.serviceTitle}</span>
+                            )}
+                            <span className="flex items-center gap-1">
+                              <Clock className="h-3.5 w-3.5" />
+                              {new Date(order.createdAt).toLocaleDateString()}
+                            </span>
+                            <span className="font-medium">
+                              ${(order.amountCents / 100).toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => updateStatus.mutate({ id: order.id, status: "pending" })}
+                          disabled={updateStatus.isPending}
+                          data-testid={`button-restore-${order.id}`}
+                        >
+                          Restore
+                        </Button>
+                      </div>
+                    </Card>
+                  ))}
+                </>
+              )}
+            </>
+          )}
       </div>
     </div>
   );

@@ -32,7 +32,7 @@ const createOrderSchema = z.object({
 });
 
 const updateOrderSchema = z.object({
-  status: z.enum(["pending", "in_progress", "delivered"]),
+  status: z.enum(["pending", "in_progress", "delivered", "cancelled", "refunded"]),
 });
 
 const intakeBodySchema = z.object({
@@ -146,7 +146,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/orders/:id", async (req, res) => {
-    const id = parseInt(req.params.id);
+    const id = parseInt(req.params.id as string);
     if (isNaN(id)) return res.status(400).json({ message: "Invalid order ID" });
     const order = await storage.getOrderById(id);
     if (!order) return res.status(404).json({ message: "Order not found" });
@@ -155,7 +155,7 @@ export async function registerRoutes(
 
   app.post("/api/orders/:id/intake", async (req, res) => {
     try {
-      const orderId = parseInt(req.params.id);
+      const orderId = parseInt(req.params.id as string);
       if (isNaN(orderId)) return res.status(400).json({ message: "Invalid order ID" });
 
       const order = await storage.getOrderById(orderId);
@@ -258,16 +258,15 @@ export async function registerRoutes(
 
       const session = await storage.createChatSession({
         customerEmail: parsed.data.email,
-        status: "active",
+        status: "pending",
         durationMinutes: parsed.data.durationMinutes,
         creditsUsedCents: totalCost,
-        startedAt: new Date(),
       });
 
       await storage.createChatMessage({
         sessionId: session.id,
-        senderRole: "psychic",
-        content: "Welcome to your live psychic session. I'm connecting with your energy now. How can I guide you today?",
+        senderRole: "system",
+        content: "Your session request has been submitted. Please wait while an advisor connects with you.",
       });
 
       res.json(session);
@@ -278,7 +277,7 @@ export async function registerRoutes(
 
   app.get("/api/chat/sessions/:id", async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid session ID" });
       const session = await storage.getChatSessionById(id);
       if (!session) return res.status(404).json({ message: "Session not found" });
@@ -300,7 +299,7 @@ export async function registerRoutes(
 
   app.get("/api/chat/sessions/:id/messages", async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid session ID" });
       const sinceId = req.query.sinceId ? parseInt(req.query.sinceId as string) : undefined;
       const messages = await storage.getChatMessages(id, sinceId);
@@ -312,14 +311,14 @@ export async function registerRoutes(
 
   app.post("/api/chat/sessions/:id/messages", async (req, res) => {
     try {
-      const sessionId = parseInt(req.params.id);
+      const sessionId = parseInt(req.params.id as string);
       if (isNaN(sessionId)) return res.status(400).json({ message: "Invalid session ID" });
 
       const session = await storage.getChatSessionById(sessionId);
       if (!session) return res.status(404).json({ message: "Session not found" });
 
       if (session.status !== "active") {
-        return res.status(400).json({ message: "Session is no longer active" });
+        return res.status(400).json({ message: "Session is not active yet. Please wait for an advisor to connect." });
       }
 
       if (session.startedAt) {
@@ -340,29 +339,6 @@ export async function registerRoutes(
         senderRole: "customer",
         content: parsed.data.content,
       });
-
-      {
-        const responses = [
-          "I sense a powerful energy around this matter. The cards reveal that positive changes are coming your way soon.",
-          "The spirits are guiding me to tell you that patience will be rewarded. Trust the process.",
-          "I'm picking up strong vibrations here. There's someone in your life who holds the key to this question.",
-          "The cosmic alignment suggests this is a transformative period. Embrace the changes ahead.",
-          "I see clarity forming in the mists. Your intuition has been guiding you correctly - trust it.",
-          "The universe is conspiring in your favor. Keep your heart open to unexpected opportunities.",
-          "I sense deep emotional currents at play. Take time to reflect before making your decision.",
-          "The stars align to show me that your path forward requires courage. You have more strength than you realize.",
-        ];
-        const randomResponse = responses[Math.floor(Math.random() * responses.length)];
-        setTimeout(async () => {
-          try {
-            await storage.createChatMessage({
-              sessionId,
-              senderRole: "psychic",
-              content: randomResponse,
-            });
-          } catch {}
-        }, 2000 + Math.random() * 3000);
-      }
 
       res.json(message);
     } catch (error: any) {
@@ -431,7 +407,7 @@ export async function registerRoutes(
 
   app.patch("/api/admin/services/:id", requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid service ID" });
       const existing = await storage.getServiceById(id);
       if (!existing) return res.status(404).json({ message: "Service not found" });
@@ -444,7 +420,7 @@ export async function registerRoutes(
 
   app.delete("/api/admin/services/:id", requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid service ID" });
       await storage.deleteService(id);
       res.json({ ok: true });
@@ -460,7 +436,7 @@ export async function registerRoutes(
 
   app.patch("/api/admin/orders/:id", requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid order ID" });
       const parsed = updateOrderSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -494,7 +470,7 @@ export async function registerRoutes(
 
   app.patch("/api/admin/testimonials/:id", requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
       const parsed = updateTestimonialSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -510,7 +486,7 @@ export async function registerRoutes(
 
   app.delete("/api/admin/testimonials/:id", requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
       await storage.deleteTestimonial(id);
       res.json({ ok: true });
@@ -539,7 +515,7 @@ export async function registerRoutes(
 
   app.patch("/api/admin/faq/:id", requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
       const parsed = updateFaqSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -555,7 +531,7 @@ export async function registerRoutes(
 
   app.delete("/api/admin/faq/:id", requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
       await storage.deleteFaq(id);
       res.json({ ok: true });
@@ -571,7 +547,7 @@ export async function registerRoutes(
 
   app.patch("/api/admin/live-sessions/:id", requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
       const parsed = updateChatSessionSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -584,6 +560,104 @@ export async function registerRoutes(
       const updated = await storage.updateChatSession(id, updateData);
       if (!updated) return res.status(404).json({ message: "Session not found" });
       res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/admin/live-sessions/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+      const session = await storage.getChatSessionById(id);
+      if (!session) return res.status(404).json({ message: "Session not found" });
+
+      if (session.status === "active" && session.startedAt) {
+        const elapsed = (Date.now() - new Date(session.startedAt).getTime()) / 1000 / 60;
+        if (elapsed >= session.durationMinutes) {
+          await storage.updateChatSession(id, { status: "ended", endedAt: new Date() });
+          session.status = "ended";
+          session.endedAt = new Date();
+        }
+      }
+
+      res.json(session);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/admin/live-sessions/:id/accept", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+
+      const session = await storage.getChatSessionById(id);
+      if (!session) return res.status(404).json({ message: "Session not found" });
+      if (session.status !== "pending") {
+        return res.status(400).json({ message: "Session is not pending" });
+      }
+
+      const updated = await storage.updateChatSession(id, {
+        status: "active",
+        startedAt: new Date(),
+      });
+
+      await storage.createChatMessage({
+        sessionId: id,
+        senderRole: "psychic",
+        content: "An advisor has connected to your session. How can I guide you today?",
+      });
+
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/admin/live-sessions/:id/messages", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+      const sinceId = req.query.sinceId ? parseInt(req.query.sinceId as string) : undefined;
+      const messages = await storage.getChatMessages(id, sinceId);
+      res.json(messages);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/admin/live-sessions/:id/messages", requireAdmin, async (req, res) => {
+    try {
+      const sessionId = parseInt(req.params.id as string);
+      if (isNaN(sessionId)) return res.status(400).json({ message: "Invalid ID" });
+
+      const session = await storage.getChatSessionById(sessionId);
+      if (!session) return res.status(404).json({ message: "Session not found" });
+      if (session.status !== "active") {
+        return res.status(400).json({ message: "Session is not active" });
+      }
+
+      if (session.startedAt) {
+        const elapsed = (Date.now() - new Date(session.startedAt).getTime()) / 1000 / 60;
+        if (elapsed >= session.durationMinutes) {
+          await storage.updateChatSession(sessionId, { status: "ended", endedAt: new Date() });
+          return res.status(400).json({ message: "Session has expired" });
+        }
+      }
+
+      const parsed = sendMessageSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
+      }
+
+      const message = await storage.createChatMessage({
+        sessionId,
+        senderRole: "psychic",
+        content: parsed.data.content,
+      });
+
+      res.json(message);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

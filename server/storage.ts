@@ -60,7 +60,17 @@ export interface IStorage {
   getChatMessages(sessionId: number, sinceId?: number): Promise<ChatMessage[]>;
   createChatMessage(m: InsertChatMessage): Promise<ChatMessage>;
 
-  getStats(): Promise<{ totalOrders: number; totalRevenue: number; pendingOrders: number; deliveredOrders: number }>;
+  getStats(): Promise<{
+    totalOrders: number;
+    totalRevenue: number;
+    pendingOrders: number;
+    deliveredOrders: number;
+    cancelledOrders: number;
+    refundedOrders: number;
+    activeSessions: number;
+    pendingSessions: number;
+    totalChatRevenue: number;
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -97,12 +107,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createService(service: InsertService): Promise<Service> {
-    const [created] = await db.insert(services).values(service).returning();
+    const [created] = await db.insert(services).values(service as any).returning();
     return created;
   }
 
   async updateService(id: number, data: Partial<InsertService>): Promise<Service | undefined> {
-    const [updated] = await db.update(services).set(data).where(eq(services.id, id)).returning();
+    const [updated] = await db.update(services).set(data as any).where(eq(services.id, id)).returning();
     return updated;
   }
 
@@ -128,7 +138,7 @@ export class DatabaseStorage implements IStorage {
       .from(orders)
       .leftJoin(services, eq(orders.serviceId, services.id))
       .orderBy(desc(orders.createdAt));
-    return result;
+    return result.map((r) => ({ ...r, serviceTitle: r.serviceTitle ?? undefined }));
   }
 
   async getOrderById(id: number): Promise<(Order & { intakeSubmitted?: boolean }) | undefined> {
@@ -288,11 +298,31 @@ export class DatabaseStorage implements IStorage {
     const allOrders = await db.select().from(orders);
     const totalOrders = allOrders.length;
     const totalRevenue = allOrders
-      .filter((o) => o.paymentStatus === "paid")
+      .filter((o) => o.paymentStatus === "paid" && o.status !== "refunded")
       .reduce((sum, o) => sum + o.amountCents, 0);
     const pendingOrders = allOrders.filter((o) => o.status === "pending" || o.status === "in_progress").length;
     const deliveredOrders = allOrders.filter((o) => o.status === "delivered").length;
-    return { totalOrders, totalRevenue, pendingOrders, deliveredOrders };
+    const cancelledOrders = allOrders.filter((o) => o.status === "cancelled").length;
+    const refundedOrders = allOrders.filter((o) => o.status === "refunded").length;
+
+    const allSessions = await db.select().from(chatSessions);
+    const activeSessions = allSessions.filter((s) => s.status === "active").length;
+    const pendingSessions = allSessions.filter((s) => s.status === "pending").length;
+    const totalChatRevenue = allSessions
+      .filter((s) => s.status !== "pending")
+      .reduce((sum, s) => sum + s.creditsUsedCents, 0);
+
+    return {
+      totalOrders,
+      totalRevenue,
+      pendingOrders,
+      deliveredOrders,
+      cancelledOrders,
+      refundedOrders,
+      activeSessions,
+      pendingSessions,
+      totalChatRevenue,
+    };
   }
 }
 
