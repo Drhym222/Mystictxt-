@@ -1,0 +1,115 @@
+mystictxt/
+├── app/
+│   ├── layout.tsx
+│   ├── page.tsx                         # Home
+│   ├── services/
+│   │   ├── page.tsx                     # Services listing
+│   │   └── [slug]/
+│   │       └── page.tsx                 # Service details
+│   ├── live/
+│   │   └── page.tsx                     # Live chat info & pricing
+│   ├── checkout/
+│   │   └── [serviceId]/
+│   │       └── page.tsx                 # Stripe + PayPal checkout
+│   ├── order/
+│   │   └── [id]/
+│   │       └── page.tsx                 # Order intake form
+│   ├── account/
+│   │   └── page.tsx                     # Client dashboard / wallet
+│   ├── chat/
+│   │   └── [sessionId]/
+│   │       └── page.tsx                 # Live timed chat
+│   ├── faq/
+│   │   └── page.tsx
+│   ├── contact/
+│   │   └── page.tsx
+│   ├── terms/
+│   │   └── page.tsx
+│   ├── privacy/
+│   │   └── page.tsx
+│   ├── admin/                           # NOT linked publicly
+│   │   ├── login/
+│   │   │   └── page.tsx
+│   │   ├── dashboard/
+│   │   │   └── page.tsx
+│   │   ├── services/
+│   │   │   ├── page.tsx
+│   │   │   ├── new/
+│   │   │   │   └── page.tsx
+│   │   │   └── [id]/
+│   │   │       └── edit/
+│   │   │           └── page.tsx
+│   │   ├── orders/
+│   │   │   ├── page.tsx
+│   │   │   └── [id]/
+│   │   │       └── page.tsx
+│   │   ├── live-sessions/
+│   │   │   └── page.tsx
+│   │   └── content/
+│   │       └── page.tsx
+│   ├── sitemap.ts
+│   └── robots.ts
+│
+├── app/api/
+│   ├── auth/
+│   │   └── [...nextauth]/route.ts       # Admin auth
+│   ├── services/
+│   │   ├── route.ts
+│   │   └── [id]/route.ts
+│   ├── orders/
+│   │   ├── route.ts
+│   │   └── [id]/route.ts
+│   ├── order-intake/
+│   │   └── route.ts
+│   ├── wallet/
+│   │   └── route.ts
+│   ├── chat/
+│   │   ├── session/route.ts
+│   │   └── message/route.ts
+│   ├── payments/
+│   │   ├── stripe/
+│   │   │   ├── create-checkout/route.ts
+│   │   │   └── webhook/route.ts
+│   │   └── paypal/
+│   │       ├── create-order/route.ts
+│   │       ├── capture-order/route.ts
+│   │       └── webhook/route.ts
+│   └── admin/
+│       ├── services/route.ts
+│       ├── orders/route.ts
+│       ├── live-sessions/route.ts
+│       └── content/route.ts
+│
+├── components/
+│   ├── Navbar.tsx
+│   ├── Footer.tsx
+│   ├── ServiceCard.tsx
+│   ├── CheckoutButtons.tsx
+│   ├── TimerDisplay.tsx
+│   ├── ChatWindow.tsx
+│   ├── CreditModal.tsx
+│   ├── AdminSidebar.tsx
+│   └── TrustBadges.tsx
+│
+├── lib/
+│   ├── prisma.ts
+│   ├── stripe.ts
+│   ├── paypal.ts
+│   ├── email.ts
+│   ├── auth.ts
+│   └── websocket.ts
+│
+├── prisma/
+│   ├── schema.prisma
+│   └── seed.ts
+│
+├── public/
+│   ├── images/
+│   └── icons/
+│
+├── middleware.ts                       # Admin + protected routes
+├── tailwind.config.ts
+├── next.config.js
+├── .env.example
+├── package.json
+└── README.md
