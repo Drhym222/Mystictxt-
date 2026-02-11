@@ -2,7 +2,7 @@ import { db } from "./db";
 import { eq, desc, sql, and, gt, asc } from "drizzle-orm";
 import {
   users, services, orders, orderIntake, testimonials, faqItems,
-  wallets, walletTransactions, chatSessions, chatMessages,
+  wallets, walletTransactions, chatSessions, chatMessages, clients,
   type InsertUser, type User,
   type InsertService, type Service,
   type InsertOrder, type Order,
@@ -13,6 +13,7 @@ import {
   type InsertWalletTransaction, type WalletTransaction,
   type InsertChatSession, type ChatSession,
   type InsertChatMessage, type ChatMessage,
+  type InsertClient, type Client,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -59,6 +60,11 @@ export interface IStorage {
 
   getChatMessages(sessionId: number, sinceId?: number): Promise<ChatMessage[]>;
   createChatMessage(m: InsertChatMessage): Promise<ChatMessage>;
+
+  getClientByEmail(email: string): Promise<Client | undefined>;
+  getClientById(id: number): Promise<Client | undefined>;
+  createClient(client: InsertClient): Promise<Client>;
+  getOrdersByEmail(email: string): Promise<(Order & { serviceTitle?: string })[]>;
 
   getStats(): Promise<{
     totalOrders: number;
@@ -292,6 +298,43 @@ export class DatabaseStorage implements IStorage {
   async createChatMessage(m: InsertChatMessage): Promise<ChatMessage> {
     const [created] = await db.insert(chatMessages).values(m).returning();
     return created;
+  }
+
+  async getClientByEmail(email: string): Promise<Client | undefined> {
+    const [client] = await db.select().from(clients).where(eq(clients.email, email));
+    return client;
+  }
+
+  async getClientById(id: number): Promise<Client | undefined> {
+    const [client] = await db.select().from(clients).where(eq(clients.id, id));
+    return client;
+  }
+
+  async createClient(client: InsertClient): Promise<Client> {
+    const [created] = await db.insert(clients).values(client).returning();
+    return created;
+  }
+
+  async getOrdersByEmail(email: string): Promise<(Order & { serviceTitle?: string })[]> {
+    const result = await db
+      .select({
+        id: orders.id,
+        serviceId: orders.serviceId,
+        customerEmail: orders.customerEmail,
+        status: orders.status,
+        paymentProvider: orders.paymentProvider,
+        paymentStatus: orders.paymentStatus,
+        amountCents: orders.amountCents,
+        currency: orders.currency,
+        stripeSessionId: orders.stripeSessionId,
+        createdAt: orders.createdAt,
+        serviceTitle: services.title,
+      })
+      .from(orders)
+      .leftJoin(services, eq(orders.serviceId, services.id))
+      .where(eq(orders.customerEmail, email))
+      .orderBy(desc(orders.createdAt));
+    return result.map((r) => ({ ...r, serviceTitle: r.serviceTitle ?? undefined }));
   }
 
   async getStats() {

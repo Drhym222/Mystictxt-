@@ -1,14 +1,15 @@
 import { Link, useLocation } from "wouter";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/components/theme-provider";
-import { Sun, Moon, Menu, X, Sparkles } from "lucide-react";
+import { Sun, Moon, Menu, X, Sparkles, LogIn, LogOut, User } from "lucide-react";
 import { useState } from "react";
+import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
 
 const navLinks = [
   { href: "/", label: "Home" },
   { href: "/services", label: "Services" },
   { href: "/live", label: "Live Chat" },
-  { href: "/account", label: "Account" },
   { href: "/faq", label: "FAQ" },
   { href: "/contact", label: "Contact" },
 ];
@@ -17,6 +18,20 @@ function Header() {
   const { theme, toggle } = useTheme();
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const { data: user } = useQuery<{ id: number; name: string; email: string } | null>({
+    queryKey: ["/api/auth/me"],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+  });
+
+  const logoutMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/auth/logout");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+    },
+  });
 
   return (
     <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-xl">
@@ -36,7 +51,7 @@ function Header() {
               <Button
                 variant={location === l.href ? "secondary" : "ghost"}
                 size="sm"
-                data-testid={`link-nav-${l.label.toLowerCase()}`}
+                data-testid={`link-nav-${l.label.toLowerCase().replace(/\s/g, "-")}`}
               >
                 {l.label}
               </Button>
@@ -44,7 +59,43 @@ function Header() {
           ))}
         </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
+          {user ? (
+            <>
+              <Link href="/account">
+                <Button
+                  variant={location.startsWith("/account") ? "secondary" : "ghost"}
+                  size="sm"
+                  className="hidden md:inline-flex"
+                  data-testid="link-nav-account"
+                >
+                  <User className="mr-1 h-3.5 w-3.5" />
+                  {user.name}
+                </Button>
+              </Link>
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => logoutMutation.mutate()}
+                className="hidden md:inline-flex"
+                data-testid="button-nav-logout"
+              >
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </>
+          ) : (
+            <Link href="/auth/login">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="hidden md:inline-flex"
+                data-testid="link-nav-signin"
+              >
+                <LogIn className="mr-1 h-3.5 w-3.5" />
+                Sign In
+              </Button>
+            </Link>
+          )}
           <Button
             size="icon"
             variant="ghost"
@@ -72,12 +123,38 @@ function Header() {
               <Button
                 variant={location === l.href ? "secondary" : "ghost"}
                 className="w-full justify-start"
-                data-testid={`link-mobile-${l.label.toLowerCase()}`}
+                data-testid={`link-mobile-${l.label.toLowerCase().replace(/\s/g, "-")}`}
               >
                 {l.label}
               </Button>
             </Link>
           ))}
+          {user ? (
+            <>
+              <Link href="/account" onClick={() => setMobileOpen(false)}>
+                <Button variant="ghost" className="w-full justify-start" data-testid="link-mobile-account">
+                  <User className="mr-2 h-4 w-4" />
+                  My Account
+                </Button>
+              </Link>
+              <Button
+                variant="ghost"
+                className="w-full justify-start text-muted-foreground"
+                onClick={() => { logoutMutation.mutate(); setMobileOpen(false); }}
+                data-testid="button-mobile-logout"
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                Sign Out
+              </Button>
+            </>
+          ) : (
+            <Link href="/auth/login" onClick={() => setMobileOpen(false)}>
+              <Button variant="ghost" className="w-full justify-start" data-testid="link-mobile-signin">
+                <LogIn className="mr-2 h-4 w-4" />
+                Sign In
+              </Button>
+            </Link>
+          )}
         </nav>
       )}
     </header>

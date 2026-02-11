@@ -6,9 +6,17 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Send, Clock, MessageCircle, AlertCircle, Loader2 } from "lucide-react";
+import { Send, Clock, MessageCircle, AlertCircle, Loader2, AlertTriangle } from "lucide-react";
 import type { ChatSession, ChatMessage } from "@shared/schema";
 
 function formatTime(seconds: number) {
@@ -23,6 +31,8 @@ export default function Chat() {
   const [lastMessageId, setLastMessageId] = useState(0);
   const [allMessages, setAllMessages] = useState<ChatMessage[]>([]);
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
+  const [showGraceModal, setShowGraceModal] = useState(false);
+  const [graceDismissed, setGraceDismissed] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -77,6 +87,11 @@ export default function Chat() {
       const total = session.durationMinutes * 60;
       const remaining = Math.max(0, total - elapsed);
       setTimeRemaining(remaining);
+
+      if (remaining <= 60 && remaining > 0 && !graceDismissed) {
+        setShowGraceModal(true);
+      }
+
       if (remaining <= 0) {
         queryClient.invalidateQueries({ queryKey: ["/api/chat/sessions", sessionId] });
       }
@@ -85,7 +100,7 @@ export default function Chat() {
     update();
     const interval = setInterval(update, 1000);
     return () => clearInterval(interval);
-  }, [session, sessionId]);
+  }, [session, sessionId, graceDismissed]);
 
   const sendMutation = useMutation({
     mutationFn: async (content: string) => {
@@ -140,6 +155,34 @@ export default function Chat() {
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col px-4 py-6" style={{ height: "calc(100vh - 80px)" }}>
+      <Dialog open={showGraceModal} onOpenChange={setShowGraceModal}>
+        <DialogContent data-testid="dialog-grace-period">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-yellow-500" />
+              Session Ending Soon
+            </DialogTitle>
+            <DialogDescription>
+              Your chat session will end in less than 1 minute. Please wrap up your conversation.
+              {timeRemaining !== null && (
+                <span className="mt-2 block text-lg font-bold text-yellow-500">
+                  {formatTime(timeRemaining)} remaining
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => { setShowGraceModal(false); setGraceDismissed(true); }}
+              data-testid="button-dismiss-grace"
+            >
+              Got it, continue chatting
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="font-serif text-xl font-bold" data-testid="text-chat-title">

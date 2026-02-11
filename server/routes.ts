@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import session from "express-session";
 import { storage } from "./storage";
 import { seedDatabase } from "./seed";
-import { insertServiceSchema, insertOrderIntakeSchema, insertTestimonialSchema, insertFaqSchema } from "@shared/schema";
+import { insertServiceSchema, insertOrderIntakeSchema, insertTestimonialSchema, insertFaqSchema, type Client } from "@shared/schema";
 import { z } from "zod";
 import crypto from "crypto";
 import MemoryStore from "memorystore";
@@ -15,11 +15,20 @@ function hashPassword(password: string): string {
 declare module "express-session" {
   interface SessionData {
     userId?: number;
+    clientId?: number;
+    clientEmail?: string;
   }
 }
 
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
   if (!req.session.userId) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+  next();
+}
+
+function requireClient(req: Request, res: Response, next: NextFunction) {
+  if (!req.session.clientId) {
     return res.status(401).json({ message: "Unauthorized" });
   }
   next();
@@ -43,12 +52,12 @@ const intakeBodySchema = z.object({
 });
 
 const addCreditsSchema = z.object({
-  email: z.string().email(),
+  email: z.string().email().optional(),
   amountCents: z.number().int().positive(),
 });
 
 const startChatSchema = z.object({
-  email: z.string().email(),
+  email: z.string().email().optional(),
   durationMinutes: z.number().int().min(5).max(60).default(10),
 });
 
@@ -202,7 +211,9 @@ export async function registerRoutes(
         return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
       }
 
-      const wallet = await storage.getOrCreateWallet(parsed.data.email);
+      const email = req.session.clientEmail || parsed.data.email;
+      if (!email) return res.status(401).json({ message: "Please sign in to add credits" });
+      const wallet = await storage.getOrCreateWallet(email);
       await storage.createWalletTransaction({
         walletId: wallet.id,
         amountCents: parsed.data.amountCents,
@@ -218,8 +229,8 @@ export async function registerRoutes(
 
   app.get("/api/account", async (req, res) => {
     try {
-      const email = req.query.email as string;
-      if (!email) return res.status(400).json({ message: "Email is required" });
+      const email = req.session.clientEmail;
+      if (!email) return res.status(401).json({ message: "Not authenticated" });
       const wallet = await storage.getOrCreateWallet(email);
       const transactions = await storage.getWalletTransactions(wallet.id);
       const sessions = await storage.getChatSessions(email);
@@ -236,10 +247,12 @@ export async function registerRoutes(
         return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
       }
 
+      const email = req.session.clientEmail || parsed.data.email;
+      if (!email) return res.status(401).json({ message: "Please sign in to start a chat session" });
       const costPerMinute = 299;
       const totalCost = costPerMinute * parsed.data.durationMinutes;
 
-      const wallet = await storage.getOrCreateWallet(parsed.data.email);
+      const wallet = await storage.getOrCreateWallet(email);
       if (wallet.balanceCents < totalCost) {
         return res.status(400).json({
           message: "Insufficient credits",
@@ -257,7 +270,7 @@ export async function registerRoutes(
       });
 
       const session = await storage.createChatSession({
-        customerEmail: parsed.data.email,
+        customerEmail: email,
         status: "pending",
         durationMinutes: parsed.data.durationMinutes,
         creditsUsedCents: totalCost,
@@ -341,6 +354,85 @@ export async function registerRoutes(
       });
 
       res.json(message);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  const registerSchema = z.object({
+    name: z.string().min(1),
+    email: z.string().email(),
+    password: z.string().min(6),
+  });
+
+  app.post("/api/auth/register", async (req, res) => {
+    try {
+      const parsed = registerSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
+      }
+      const { name, email, password } = parsed.data;
+
+      const existing = await storage.getClientByEmail(email);
+      if (existing) {
+        return res.status(409).json({ message: "Email already registered" });
+      }
+
+      const client = await storage.createClient({
+        name,
+        email,
+        passwordHash: hashPassword(password),
+      });
+
+      req.session.clientId = client.id;
+      req.session.clientEmail = client.email;
+      res.json({ id: client.id, name: client.name, email: client.email });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Registration failed" });
+    }
+  });
+
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
+      }
+
+      const client = await storage.getClientByEmail(email);
+      if (!client || client.passwordHash !== hashPassword(password)) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+
+      req.session.clientId = client.id;
+      req.session.clientEmail = client.email;
+      res.json({ id: client.id, name: client.name, email: client.email });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    req.session.destroy(() => {
+      res.json({ ok: true });
+    });
+  });
+
+  app.get("/api/auth/me", async (req, res) => {
+    if (!req.session.clientId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    const client = await storage.getClientById(req.session.clientId);
+    if (!client) {
+      return res.status(401).json({ message: "Client not found" });
+    }
+    res.json({ id: client.id, name: client.name, email: client.email });
+  });
+
+  app.get("/api/client/orders", requireClient, async (req, res) => {
+    try {
+      const orders = await storage.getOrdersByEmail(req.session.clientEmail!);
+      res.json(orders);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

@@ -1,16 +1,13 @@
-import { useState } from "react";
-import { Link } from "wouter";
+import { Link, Redirect } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
 import {
-  Wallet, CreditCard, MessageCircle, Clock, ArrowRight, Plus, History,
+  Wallet, CreditCard, MessageCircle, Clock, ArrowRight, ShoppingCart, LogOut, User,
 } from "lucide-react";
 import type { Wallet as WalletType, WalletTransaction, ChatSession } from "@shared/schema";
 
@@ -28,50 +25,37 @@ function formatDate(date: string | Date) {
   });
 }
 
-const creditPackages = [
-  { label: "$10.00", cents: 1000 },
-  { label: "$25.00", cents: 2500 },
-  { label: "$50.00", cents: 5000 },
-  { label: "$100.00", cents: 10000 },
-];
-
 export default function Account() {
-  const [email, setEmail] = useState("");
-  const [loggedInEmail, setLoggedInEmail] = useState("");
   const { toast } = useToast();
+
+  const { data: user, isLoading: userLoading } = useQuery<{ id: number; name: string; email: string } | null>({
+    queryKey: ["/api/auth/me"],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+  });
 
   const { data: accountData, isLoading } = useQuery<{
     wallet: WalletType;
     transactions: WalletTransaction[];
     sessions: ChatSession[];
   }>({
-    queryKey: ["/api/account", `?email=${loggedInEmail}`],
-    enabled: !!loggedInEmail,
+    queryKey: ["/api/account"],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    enabled: !!user,
   });
 
-  const addCreditsMutation = useMutation({
-    mutationFn: async (amountCents: number) => {
-      const res = await apiRequest("POST", "/api/wallet/add-credits", {
-        email: loggedInEmail,
-        amountCents,
-      });
-      return res.json();
+  const logoutMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/auth/logout");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/account"] });
-      toast({ title: "Credits Added", description: "Your credits have been added successfully." });
-    },
-    onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      window.location.href = "/";
     },
   });
 
   const startSessionMutation = useMutation({
     mutationFn: async (durationMinutes: number) => {
-      const res = await apiRequest("POST", "/api/chat/sessions", {
-        email: loggedInEmail,
-        durationMinutes,
-      });
+      const res = await apiRequest("POST", "/api/chat/sessions", { durationMinutes });
       return res.json();
     },
     onSuccess: (data: ChatSession) => {
@@ -83,49 +67,23 @@ export default function Account() {
     },
   });
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (email.includes("@")) {
-      setLoggedInEmail(email);
-    }
-  };
-
-  if (!loggedInEmail) {
+  if (userLoading) {
     return (
-      <div className="mx-auto max-w-md px-4 py-16 md:py-24">
-        <Card className="p-6">
-          <div className="mb-6 text-center">
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-purple-500/10">
-              <Wallet className="h-6 w-6 text-purple-400" />
-            </div>
-            <h1 className="font-serif text-2xl font-bold" data-testid="text-account-login-title">
-              Your Account
-            </h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Enter your email to access your wallet, credits, and chat sessions.
-            </p>
-          </div>
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <Label htmlFor="email">Email Address</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                data-testid="input-account-email"
-              />
-            </div>
-            <Button type="submit" className="w-full" data-testid="button-account-login">
-              Access Account
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
-          </form>
-        </Card>
+      <div className="mx-auto max-w-5xl px-4 py-16">
+        <div className="grid gap-6 md:grid-cols-3">
+          {[1, 2, 3].map((i) => (
+            <Card key={i} className="p-6">
+              <Skeleton className="mb-2 h-5 w-24" />
+              <Skeleton className="h-8 w-32" />
+            </Card>
+          ))}
+        </div>
       </div>
     );
+  }
+
+  if (!user) {
+    return <Redirect to="/auth/login" />;
   }
 
   return (
@@ -135,16 +93,20 @@ export default function Account() {
           <h1 className="font-serif text-3xl font-bold" data-testid="text-account-title">
             My Account
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground" data-testid="text-account-email">
-            {loggedInEmail}
-          </p>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <User className="h-3.5 w-3.5" />
+            <span data-testid="text-account-name">{user.name}</span>
+            <span data-testid="text-account-email">({user.email})</span>
+          </div>
         </div>
         <Button
           variant="outline"
           size="sm"
-          onClick={() => setLoggedInEmail("")}
+          onClick={() => logoutMutation.mutate()}
+          disabled={logoutMutation.isPending}
           data-testid="button-account-logout"
         >
+          <LogOut className="mr-1 h-3.5 w-3.5" />
           Sign Out
         </Button>
       </div>
@@ -160,58 +122,60 @@ export default function Account() {
         </div>
       ) : (
         <>
-          <div className="mb-8 grid gap-6 md:grid-cols-3">
-            <Card className="p-6" data-testid="card-wallet-balance">
+          <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Card className="p-5" data-testid="card-wallet-balance">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <CreditCard className="h-4 w-4" />
                 Wallet Balance
               </div>
-              <p className="mt-2 text-3xl font-bold" data-testid="text-wallet-balance">
+              <p className="mt-2 text-2xl font-bold" data-testid="text-wallet-balance">
                 {formatPrice(accountData?.wallet.balanceCents ?? 0)}
               </p>
+              <Link href="/account/wallet">
+                <Button variant="ghost" size="sm" className="mt-2 w-full" data-testid="link-wallet-details">
+                  Manage Wallet
+                  <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                </Button>
+              </Link>
             </Card>
-            <Card className="p-6" data-testid="card-total-sessions">
+
+            <Card className="p-5" data-testid="card-total-sessions">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <MessageCircle className="h-4 w-4" />
                 Chat Sessions
               </div>
-              <p className="mt-2 text-3xl font-bold" data-testid="text-total-sessions">
+              <p className="mt-2 text-2xl font-bold" data-testid="text-total-sessions">
                 {accountData?.sessions.length ?? 0}
               </p>
             </Card>
-            <Card className="p-6" data-testid="card-active-sessions">
+
+            <Card className="p-5" data-testid="card-active-sessions">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Clock className="h-4 w-4" />
                 Active Sessions
               </div>
-              <p className="mt-2 text-3xl font-bold" data-testid="text-active-sessions">
+              <p className="mt-2 text-2xl font-bold" data-testid="text-active-sessions">
                 {accountData?.sessions.filter((s) => s.status === "active").length ?? 0}
               </p>
+            </Card>
+
+            <Card className="p-5" data-testid="card-orders-link">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <ShoppingCart className="h-4 w-4" />
+                My Orders
+              </div>
+              <Link href="/account/orders">
+                <Button variant="ghost" size="sm" className="mt-4 w-full" data-testid="link-order-history">
+                  View Orders
+                  <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                </Button>
+              </Link>
             </Card>
           </div>
 
           <div className="grid gap-8 lg:grid-cols-2">
             <div>
-              <h2 className="mb-4 font-serif text-xl font-bold" data-testid="text-add-credits-title">
-                Add Credits
-              </h2>
-              <div className="grid grid-cols-2 gap-3">
-                {creditPackages.map((pkg) => (
-                  <Button
-                    key={pkg.cents}
-                    variant="outline"
-                    className="flex flex-col gap-1 py-4"
-                    onClick={() => addCreditsMutation.mutate(pkg.cents)}
-                    disabled={addCreditsMutation.isPending}
-                    data-testid={`button-add-credits-${pkg.cents}`}
-                  >
-                    <Plus className="h-4 w-4" />
-                    <span className="text-lg font-bold">{pkg.label}</span>
-                  </Button>
-                ))}
-              </div>
-
-              <h2 className="mb-4 mt-8 font-serif text-xl font-bold" data-testid="text-start-session-title">
+              <h2 className="mb-4 font-serif text-xl font-bold" data-testid="text-start-session-title">
                 Start Live Chat
               </h2>
               <div className="space-y-3">
@@ -244,67 +208,38 @@ export default function Account() {
 
             <div>
               <h2 className="mb-4 font-serif text-xl font-bold" data-testid="text-sessions-title">
-                Chat Sessions
+                Recent Sessions
               </h2>
-              {accountData?.sessions.length === 0 ? (
+              {!accountData?.sessions.length ? (
                 <Card className="p-6 text-center text-sm text-muted-foreground">
                   No chat sessions yet. Add credits and start your first session.
                 </Card>
               ) : (
                 <div className="space-y-3">
-                  {accountData?.sessions.map((s) => (
+                  {accountData.sessions.slice(0, 5).map((s) => (
                     <Card key={s.id} className="flex flex-wrap items-center justify-between gap-3 p-4" data-testid={`card-session-${s.id}`}>
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="text-sm font-medium">Session #{s.id}</p>
                           <Badge
-                            variant={s.status === "active" ? "default" : "secondary"}
+                            variant={s.status === "active" ? "default" : s.status === "pending" ? "secondary" : "outline"}
                             data-testid={`badge-session-status-${s.id}`}
                           >
-                            {s.status}
+                            {s.status === "pending" ? "Waiting" : s.status}
                           </Badge>
                         </div>
                         <p className="text-xs text-muted-foreground">
                           {s.durationMinutes} min - {s.createdAt ? formatDate(s.createdAt) : "N/A"}
                         </p>
                       </div>
-                      {s.status === "active" && (
+                      {(s.status === "active" || s.status === "pending") && (
                         <Link href={`/chat/${s.id}`}>
                           <Button size="sm" data-testid={`button-rejoin-${s.id}`}>
-                            Rejoin
+                            {s.status === "pending" ? "Check Status" : "Rejoin"}
                             <ArrowRight className="ml-1 h-4 w-4" />
                           </Button>
                         </Link>
                       )}
-                    </Card>
-                  ))}
-                </div>
-              )}
-
-              <h2 className="mb-4 mt-8 font-serif text-xl font-bold" data-testid="text-transactions-title">
-                <History className="mr-2 inline h-5 w-5" />
-                Transaction History
-              </h2>
-              {accountData?.transactions.length === 0 ? (
-                <Card className="p-6 text-center text-sm text-muted-foreground">
-                  No transactions yet.
-                </Card>
-              ) : (
-                <div className="space-y-2">
-                  {accountData?.transactions.slice(0, 10).map((t) => (
-                    <Card key={t.id} className="flex flex-wrap items-center justify-between gap-2 p-3" data-testid={`card-transaction-${t.id}`}>
-                      <div>
-                        <p className="text-sm">{t.description}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {t.createdAt ? formatDate(t.createdAt) : "N/A"}
-                        </p>
-                      </div>
-                      <span
-                        className={`text-sm font-semibold ${t.amountCents >= 0 ? "text-green-500" : "text-red-500"}`}
-                        data-testid={`text-transaction-amount-${t.id}`}
-                      >
-                        {t.amountCents >= 0 ? "+" : "-"}{formatPrice(t.amountCents)}
-                      </span>
                     </Card>
                   ))}
                 </div>

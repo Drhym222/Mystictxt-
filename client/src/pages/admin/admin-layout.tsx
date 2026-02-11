@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
-import { LayoutDashboard, Package, ShoppingCart, LogOut, Sparkles, ChevronLeft, MessageCircle, FileText } from "lucide-react";
+import { LayoutDashboard, Package, ShoppingCart, LogOut, Sparkles, ChevronLeft, MessageCircle, FileText, RotateCcw } from "lucide-react";
 import type { User, ChatSession } from "@shared/schema";
 
 const adminLinks = [
@@ -12,6 +12,7 @@ const adminLinks = [
   { href: "/admin/services", label: "Services", icon: Package },
   { href: "/admin/orders", label: "Orders", icon: ShoppingCart },
   { href: "/admin/live-sessions", label: "Live Chat", icon: MessageCircle },
+  { href: "/admin/refunds", label: "Refunds", icon: RotateCcw },
   { href: "/admin/content", label: "Content", icon: FileText },
 ];
 
