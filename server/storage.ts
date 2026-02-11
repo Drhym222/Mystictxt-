@@ -1,13 +1,18 @@
 import { db } from "./db";
-import { eq, desc, sql, and } from "drizzle-orm";
+import { eq, desc, sql, and, gt, asc } from "drizzle-orm";
 import {
   users, services, orders, orderIntake, testimonials, faqItems,
+  wallets, walletTransactions, chatSessions, chatMessages,
   type InsertUser, type User,
   type InsertService, type Service,
   type InsertOrder, type Order,
   type InsertOrderIntake, type OrderIntake,
   type InsertTestimonial, type Testimonial,
   type InsertFaq, type FaqItem,
+  type InsertWallet, type Wallet,
+  type InsertWalletTransaction, type WalletTransaction,
+  type InsertChatSession, type ChatSession,
+  type InsertChatMessage, type ChatMessage,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -32,9 +37,28 @@ export interface IStorage {
 
   getTestimonials(activeOnly?: boolean): Promise<Testimonial[]>;
   createTestimonial(t: InsertTestimonial): Promise<Testimonial>;
+  updateTestimonial(id: number, data: Partial<InsertTestimonial>): Promise<Testimonial | undefined>;
+  deleteTestimonial(id: number): Promise<void>;
 
   getFaqs(activeOnly?: boolean): Promise<FaqItem[]>;
   createFaq(f: InsertFaq): Promise<FaqItem>;
+  updateFaq(id: number, data: Partial<InsertFaq>): Promise<FaqItem | undefined>;
+  deleteFaq(id: number): Promise<void>;
+
+  getWalletByEmail(email: string): Promise<Wallet | undefined>;
+  getOrCreateWallet(email: string): Promise<Wallet>;
+  updateWalletBalance(id: number, amountCents: number): Promise<Wallet | undefined>;
+  getWalletTransactions(walletId: number): Promise<WalletTransaction[]>;
+  createWalletTransaction(t: InsertWalletTransaction): Promise<WalletTransaction>;
+
+  getChatSessions(email?: string): Promise<ChatSession[]>;
+  getChatSessionById(id: number): Promise<ChatSession | undefined>;
+  createChatSession(s: InsertChatSession): Promise<ChatSession>;
+  updateChatSession(id: number, data: Partial<ChatSession>): Promise<ChatSession | undefined>;
+  getAllChatSessions(): Promise<ChatSession[]>;
+
+  getChatMessages(sessionId: number, sinceId?: number): Promise<ChatMessage[]>;
+  createChatMessage(m: InsertChatMessage): Promise<ChatMessage>;
 
   getStats(): Promise<{ totalOrders: number; totalRevenue: number; pendingOrders: number; deliveredOrders: number }>;
 }
@@ -146,6 +170,15 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
+  async updateTestimonial(id: number, data: Partial<InsertTestimonial>): Promise<Testimonial | undefined> {
+    const [updated] = await db.update(testimonials).set(data).where(eq(testimonials.id, id)).returning();
+    return updated;
+  }
+
+  async deleteTestimonial(id: number): Promise<void> {
+    await db.delete(testimonials).where(eq(testimonials.id, id));
+  }
+
   async getFaqs(activeOnly = false): Promise<FaqItem[]> {
     if (activeOnly) {
       return db.select().from(faqItems).where(eq(faqItems.active, true)).orderBy(faqItems.sortOrder);
@@ -155,6 +188,99 @@ export class DatabaseStorage implements IStorage {
 
   async createFaq(f: InsertFaq): Promise<FaqItem> {
     const [created] = await db.insert(faqItems).values(f).returning();
+    return created;
+  }
+
+  async updateFaq(id: number, data: Partial<InsertFaq>): Promise<FaqItem | undefined> {
+    const [updated] = await db.update(faqItems).set(data).where(eq(faqItems.id, id)).returning();
+    return updated;
+  }
+
+  async deleteFaq(id: number): Promise<void> {
+    await db.delete(faqItems).where(eq(faqItems.id, id));
+  }
+
+  async getWalletByEmail(email: string): Promise<Wallet | undefined> {
+    const [wallet] = await db.select().from(wallets).where(eq(wallets.customerEmail, email));
+    return wallet;
+  }
+
+  async getOrCreateWallet(email: string): Promise<Wallet> {
+    const existing = await this.getWalletByEmail(email);
+    if (existing) return existing;
+    const [created] = await db.insert(wallets).values({ customerEmail: email, balanceCents: 0 }).returning();
+    return created;
+  }
+
+  async updateWalletBalance(id: number, amountCents: number): Promise<Wallet | undefined> {
+    const [updated] = await db
+      .update(wallets)
+      .set({ balanceCents: sql`${wallets.balanceCents} + ${amountCents}` })
+      .where(eq(wallets.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getWalletTransactions(walletId: number): Promise<WalletTransaction[]> {
+    return db
+      .select()
+      .from(walletTransactions)
+      .where(eq(walletTransactions.walletId, walletId))
+      .orderBy(desc(walletTransactions.createdAt));
+  }
+
+  async createWalletTransaction(t: InsertWalletTransaction): Promise<WalletTransaction> {
+    const [created] = await db.insert(walletTransactions).values(t).returning();
+    return created;
+  }
+
+  async getChatSessions(email?: string): Promise<ChatSession[]> {
+    if (email) {
+      return db
+        .select()
+        .from(chatSessions)
+        .where(eq(chatSessions.customerEmail, email))
+        .orderBy(desc(chatSessions.createdAt));
+    }
+    return db.select().from(chatSessions).orderBy(desc(chatSessions.createdAt));
+  }
+
+  async getChatSessionById(id: number): Promise<ChatSession | undefined> {
+    const [session] = await db.select().from(chatSessions).where(eq(chatSessions.id, id));
+    return session;
+  }
+
+  async createChatSession(s: InsertChatSession): Promise<ChatSession> {
+    const [created] = await db.insert(chatSessions).values(s).returning();
+    return created;
+  }
+
+  async updateChatSession(id: number, data: Partial<ChatSession>): Promise<ChatSession | undefined> {
+    const [updated] = await db.update(chatSessions).set(data).where(eq(chatSessions.id, id)).returning();
+    return updated;
+  }
+
+  async getAllChatSessions(): Promise<ChatSession[]> {
+    return db.select().from(chatSessions).orderBy(desc(chatSessions.createdAt));
+  }
+
+  async getChatMessages(sessionId: number, sinceId?: number): Promise<ChatMessage[]> {
+    if (sinceId) {
+      return db
+        .select()
+        .from(chatMessages)
+        .where(and(eq(chatMessages.sessionId, sessionId), gt(chatMessages.id, sinceId)))
+        .orderBy(asc(chatMessages.createdAt));
+    }
+    return db
+      .select()
+      .from(chatMessages)
+      .where(eq(chatMessages.sessionId, sessionId))
+      .orderBy(asc(chatMessages.createdAt));
+  }
+
+  async createChatMessage(m: InsertChatMessage): Promise<ChatMessage> {
+    const [created] = await db.insert(chatMessages).values(m).returning();
     return created;
   }
 

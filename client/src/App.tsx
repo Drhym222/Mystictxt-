@@ -14,11 +14,16 @@ import FAQ from "@/pages/faq";
 import Contact from "@/pages/contact";
 import Terms from "@/pages/terms";
 import Privacy from "@/pages/privacy";
+import Live from "@/pages/live";
+import Account from "@/pages/account";
+import Chat from "@/pages/chat";
 import AdminLogin from "@/pages/admin/login";
 import AdminLayout from "@/pages/admin/admin-layout";
 import AdminDashboard from "@/pages/admin/dashboard";
 import AdminServices from "@/pages/admin/admin-services";
 import AdminOrders from "@/pages/admin/admin-orders";
+import AdminLiveSessions from "@/pages/admin/admin-live-sessions";
+import AdminContent from "@/pages/admin/admin-content";
 import NotFound from "@/pages/not-found";
 
 function PublicPages() {
@@ -34,6 +39,9 @@ function PublicPages() {
         <Route path="/contact" component={Contact} />
         <Route path="/terms" component={Terms} />
         <Route path="/privacy" component={Privacy} />
+        <Route path="/live" component={Live} />
+        <Route path="/account" component={Account} />
+        <Route path="/chat/:sessionId" component={Chat} />
         <Route component={NotFound} />
       </Switch>
     </Layout>
@@ -47,6 +55,8 @@ function AdminPages() {
         <Route path="/admin/dashboard" component={AdminDashboard} />
         <Route path="/admin/services" component={AdminServices} />
         <Route path="/admin/orders" component={AdminOrders} />
+        <Route path="/admin/live-sessions" component={AdminLiveSessions} />
+        <Route path="/admin/content" component={AdminContent} />
         <Route>
           <div className="p-8 text-center text-muted-foreground">Page not found</div>
         </Route>

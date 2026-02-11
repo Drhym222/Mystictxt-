@@ -3,13 +3,15 @@ import { Link, useLocation, Redirect } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
-import { LayoutDashboard, Package, ShoppingCart, LogOut, Sparkles, ChevronLeft } from "lucide-react";
+import { LayoutDashboard, Package, ShoppingCart, LogOut, Sparkles, ChevronLeft, MessageCircle, FileText } from "lucide-react";
 import type { User } from "@shared/schema";
 
 const adminLinks = [
   { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/services", label: "Services", icon: Package },
   { href: "/admin/orders", label: "Orders", icon: ShoppingCart },
+  { href: "/admin/live-sessions", label: "Live Sessions", icon: MessageCircle },
+  { href: "/admin/content", label: "Content", icon: FileText },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

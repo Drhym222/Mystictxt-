@@ -7,6 +7,8 @@ import { useState } from "react";
 const navLinks = [
   { href: "/", label: "Home" },
   { href: "/services", label: "Services" },
+  { href: "/live", label: "Live Chat" },
+  { href: "/account", label: "Account" },
   { href: "/faq", label: "FAQ" },
   { href: "/contact", label: "Contact" },
 ];
@@ -102,6 +104,7 @@ function Footer() {
             <h4 className="mb-3 text-sm font-semibold">Services</h4>
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li><Link href="/services" data-testid="link-footer-services">All Services</Link></li>
+              <li><Link href="/live" data-testid="link-footer-live-chat">Live Chat</Link></li>
               <li><Link href="/services/psychic-reading" data-testid="link-footer-psychic">Psychic Reading</Link></li>
               <li><Link href="/services/telepathy-mind-reading" data-testid="link-footer-telepathy">Telepathy Reading</Link></li>
             </ul>

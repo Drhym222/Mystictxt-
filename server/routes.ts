@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import session from "express-session";
 import { storage } from "./storage";
 import { seedDatabase } from "./seed";
-import { insertServiceSchema, insertOrderIntakeSchema } from "@shared/schema";
+import { insertServiceSchema, insertOrderIntakeSchema, insertTestimonialSchema, insertFaqSchema } from "@shared/schema";
 import { z } from "zod";
 import crypto from "crypto";
 import MemoryStore from "memorystore";
@@ -42,6 +42,38 @@ const intakeBodySchema = z.object({
   details: z.record(z.string()).optional().default({}),
 });
 
+const addCreditsSchema = z.object({
+  email: z.string().email(),
+  amountCents: z.number().int().positive(),
+});
+
+const startChatSchema = z.object({
+  email: z.string().email(),
+  durationMinutes: z.number().int().min(5).max(60).default(10),
+});
+
+const sendMessageSchema = z.object({
+  content: z.string().min(1).max(2000),
+});
+
+const updateTestimonialSchema = z.object({
+  name: z.string().min(1).optional(),
+  text: z.string().min(1).optional(),
+  rating: z.number().int().min(1).max(5).optional(),
+  active: z.boolean().optional(),
+});
+
+const updateFaqSchema = z.object({
+  question: z.string().min(1).optional(),
+  answer: z.string().min(1).optional(),
+  sortOrder: z.number().int().optional(),
+  active: z.boolean().optional(),
+});
+
+const updateChatSessionSchema = z.object({
+  status: z.enum(["active", "ended", "pending"]).optional(),
+});
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -77,8 +109,8 @@ export async function registerRoutes(
   });
 
   app.get("/api/testimonials", async (_req, res) => {
-    const testimonials = await storage.getTestimonials(true);
-    res.json(testimonials);
+    const t = await storage.getTestimonials(true);
+    res.json(t);
   });
 
   app.get("/api/faq", async (_req, res) => {
@@ -148,6 +180,193 @@ export async function registerRoutes(
       res.json(intake);
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to submit intake" });
+    }
+  });
+
+  app.get("/api/wallet", async (req, res) => {
+    try {
+      const email = req.query.email as string;
+      if (!email) return res.status(400).json({ message: "Email is required" });
+      const wallet = await storage.getOrCreateWallet(email);
+      const transactions = await storage.getWalletTransactions(wallet.id);
+      res.json({ wallet, transactions });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/wallet/add-credits", async (req, res) => {
+    try {
+      const parsed = addCreditsSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
+      }
+
+      const wallet = await storage.getOrCreateWallet(parsed.data.email);
+      await storage.createWalletTransaction({
+        walletId: wallet.id,
+        amountCents: parsed.data.amountCents,
+        type: "credit",
+        description: `Added $${(parsed.data.amountCents / 100).toFixed(2)} credits`,
+      });
+      const updated = await storage.updateWalletBalance(wallet.id, parsed.data.amountCents);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/account", async (req, res) => {
+    try {
+      const email = req.query.email as string;
+      if (!email) return res.status(400).json({ message: "Email is required" });
+      const wallet = await storage.getOrCreateWallet(email);
+      const transactions = await storage.getWalletTransactions(wallet.id);
+      const sessions = await storage.getChatSessions(email);
+      res.json({ wallet, transactions, sessions });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/chat/sessions", async (req, res) => {
+    try {
+      const parsed = startChatSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
+      }
+
+      const costPerMinute = 299;
+      const totalCost = costPerMinute * parsed.data.durationMinutes;
+
+      const wallet = await storage.getOrCreateWallet(parsed.data.email);
+      if (wallet.balanceCents < totalCost) {
+        return res.status(400).json({
+          message: "Insufficient credits",
+          required: totalCost,
+          available: wallet.balanceCents,
+        });
+      }
+
+      await storage.updateWalletBalance(wallet.id, -totalCost);
+      await storage.createWalletTransaction({
+        walletId: wallet.id,
+        amountCents: -totalCost,
+        type: "debit",
+        description: `Live chat session - ${parsed.data.durationMinutes} minutes`,
+      });
+
+      const session = await storage.createChatSession({
+        customerEmail: parsed.data.email,
+        status: "active",
+        durationMinutes: parsed.data.durationMinutes,
+        creditsUsedCents: totalCost,
+        startedAt: new Date(),
+      });
+
+      await storage.createChatMessage({
+        sessionId: session.id,
+        senderRole: "psychic",
+        content: "Welcome to your live psychic session. I'm connecting with your energy now. How can I guide you today?",
+      });
+
+      res.json(session);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/chat/sessions/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid session ID" });
+      const session = await storage.getChatSessionById(id);
+      if (!session) return res.status(404).json({ message: "Session not found" });
+
+      if (session.status === "active" && session.startedAt) {
+        const elapsed = (Date.now() - new Date(session.startedAt).getTime()) / 1000 / 60;
+        if (elapsed >= session.durationMinutes) {
+          await storage.updateChatSession(id, { status: "ended", endedAt: new Date() });
+          session.status = "ended";
+          session.endedAt = new Date();
+        }
+      }
+
+      res.json(session);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/chat/sessions/:id/messages", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid session ID" });
+      const sinceId = req.query.sinceId ? parseInt(req.query.sinceId as string) : undefined;
+      const messages = await storage.getChatMessages(id, sinceId);
+      res.json(messages);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/chat/sessions/:id/messages", async (req, res) => {
+    try {
+      const sessionId = parseInt(req.params.id);
+      if (isNaN(sessionId)) return res.status(400).json({ message: "Invalid session ID" });
+
+      const session = await storage.getChatSessionById(sessionId);
+      if (!session) return res.status(404).json({ message: "Session not found" });
+
+      if (session.status !== "active") {
+        return res.status(400).json({ message: "Session is no longer active" });
+      }
+
+      if (session.startedAt) {
+        const elapsed = (Date.now() - new Date(session.startedAt).getTime()) / 1000 / 60;
+        if (elapsed >= session.durationMinutes) {
+          await storage.updateChatSession(sessionId, { status: "ended", endedAt: new Date() });
+          return res.status(400).json({ message: "Session has expired" });
+        }
+      }
+
+      const parsed = sendMessageSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
+      }
+
+      const message = await storage.createChatMessage({
+        sessionId,
+        senderRole: "customer",
+        content: parsed.data.content,
+      });
+
+      {
+        const responses = [
+          "I sense a powerful energy around this matter. The cards reveal that positive changes are coming your way soon.",
+          "The spirits are guiding me to tell you that patience will be rewarded. Trust the process.",
+          "I'm picking up strong vibrations here. There's someone in your life who holds the key to this question.",
+          "The cosmic alignment suggests this is a transformative period. Embrace the changes ahead.",
+          "I see clarity forming in the mists. Your intuition has been guiding you correctly - trust it.",
+          "The universe is conspiring in your favor. Keep your heart open to unexpected opportunities.",
+          "I sense deep emotional currents at play. Take time to reflect before making your decision.",
+          "The stars align to show me that your path forward requires courage. You have more strength than you realize.",
+        ];
+        const randomResponse = responses[Math.floor(Math.random() * responses.length)];
+        setTimeout(async () => {
+          try {
+            await storage.createChatMessage({
+              sessionId,
+              senderRole: "psychic",
+              content: randomResponse,
+            });
+          } catch {}
+        }, 2000 + Math.random() * 3000);
+      }
+
+      res.json(message);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
     }
   });
 
@@ -250,6 +469,121 @@ export async function registerRoutes(
       const order = await storage.updateOrder(id, { status: parsed.data.status });
       if (!order) return res.status(404).json({ message: "Order not found" });
       res.json(order);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/admin/testimonials", requireAdmin, async (_req, res) => {
+    const all = await storage.getTestimonials();
+    res.json(all);
+  });
+
+  app.post("/api/admin/testimonials", requireAdmin, async (req, res) => {
+    try {
+      const parsed = insertTestimonialSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
+      }
+      const created = await storage.createTestimonial(parsed.data);
+      res.json(created);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/admin/testimonials/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+      const parsed = updateTestimonialSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
+      }
+      const updated = await storage.updateTestimonial(id, parsed.data);
+      if (!updated) return res.status(404).json({ message: "Testimonial not found" });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/admin/testimonials/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+      await storage.deleteTestimonial(id);
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/admin/faq", requireAdmin, async (_req, res) => {
+    const all = await storage.getFaqs();
+    res.json(all);
+  });
+
+  app.post("/api/admin/faq", requireAdmin, async (req, res) => {
+    try {
+      const parsed = insertFaqSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
+      }
+      const created = await storage.createFaq(parsed.data);
+      res.json(created);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/admin/faq/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+      const parsed = updateFaqSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
+      }
+      const updated = await storage.updateFaq(id, parsed.data);
+      if (!updated) return res.status(404).json({ message: "FAQ not found" });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/admin/faq/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+      await storage.deleteFaq(id);
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/admin/live-sessions", requireAdmin, async (_req, res) => {
+    const all = await storage.getAllChatSessions();
+    res.json(all);
+  });
+
+  app.patch("/api/admin/live-sessions/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+      const parsed = updateChatSessionSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
+      }
+      const updateData: Record<string, any> = { ...parsed.data };
+      if (parsed.data.status === "ended") {
+        updateData.endedAt = new Date();
+      }
+      const updated = await storage.updateChatSession(id, updateData);
+      if (!updated) return res.status(404).json({ message: "Session not found" });
+      res.json(updated);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
