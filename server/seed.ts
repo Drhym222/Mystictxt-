@@ -6,10 +6,10 @@ function hashPassword(password: string): string {
 }
 
 export async function seedDatabase() {
-  const existingAdmin = await storage.getUserByEmail("admin@mystictxt.com");
+  const existingAdmin = await storage.getAdminUserByEmail("admin@mystictxt.com");
   if (existingAdmin) return;
 
-  await storage.createUser({
+  await storage.createAdminUser({
     email: "admin@mystictxt.com",
     passwordHash: hashPassword("admin123"),
     role: "admin",

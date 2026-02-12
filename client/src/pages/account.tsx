@@ -1,4 +1,4 @@
-import { Link, Redirect } from "wouter";
+import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import {
   Wallet, CreditCard, MessageCircle, Clock, ArrowRight, ShoppingCart, LogOut, User,
 } from "lucide-react";
 import type { Wallet as WalletType, WalletTransaction, ChatSession } from "@shared/schema";
+import { useAuth } from "@/hooks/use-auth";
 
 function formatPrice(cents: number) {
   return `$${(Math.abs(cents) / 100).toFixed(2)}`;
@@ -27,11 +28,7 @@ function formatDate(date: string | Date) {
 
 export default function Account() {
   const { toast } = useToast();
-
-  const { data: user, isLoading: userLoading } = useQuery<{ id: number; name: string; email: string } | null>({
-    queryKey: ["/api/auth/me"],
-    queryFn: getQueryFn({ on401: "returnNull" }),
-  });
+  const { user, isLoading: userLoading } = useAuth();
 
   const { data: accountData, isLoading } = useQuery<{
     wallet: WalletType;
@@ -41,16 +38,6 @@ export default function Account() {
     queryKey: ["/api/account"],
     queryFn: getQueryFn({ on401: "returnNull" }),
     enabled: !!user,
-  });
-
-  const logoutMutation = useMutation({
-    mutationFn: async () => {
-      await apiRequest("POST", "/api/auth/logout");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-      window.location.href = "/";
-    },
   });
 
   const startSessionMutation = useMutation({
@@ -83,7 +70,8 @@ export default function Account() {
   }
 
   if (!user) {
-    return <Redirect to="/auth/login" />;
+    window.location.href = "/api/login";
+    return null;
   }
 
   return (
@@ -95,15 +83,14 @@ export default function Account() {
           </h1>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <User className="h-3.5 w-3.5" />
-            <span data-testid="text-account-name">{user.name}</span>
+            <span data-testid="text-account-name">{user.firstName} {user.lastName}</span>
             <span data-testid="text-account-email">({user.email})</span>
           </div>
         </div>
         <Button
           variant="outline"
           size="sm"
-          onClick={() => logoutMutation.mutate()}
-          disabled={logoutMutation.isPending}
+          onClick={() => { window.location.href = "/api/logout"; }}
           data-testid="button-account-logout"
         >
           <LogOut className="mr-1 h-3.5 w-3.5" />

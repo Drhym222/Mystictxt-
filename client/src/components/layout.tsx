@@ -1,10 +1,9 @@
 import { Link, useLocation } from "wouter";
-import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/components/theme-provider";
 import { Sun, Moon, Menu, X, Sparkles, LogIn, LogOut, User } from "lucide-react";
 import { useState } from "react";
-import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
 
 const navLinks = [
   { href: "/", label: "Home" },
@@ -18,20 +17,7 @@ function Header() {
   const { theme, toggle } = useTheme();
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
-
-  const { data: user } = useQuery<{ id: number; name: string; email: string } | null>({
-    queryKey: ["/api/auth/me"],
-    queryFn: getQueryFn({ on401: "returnNull" }),
-  });
-
-  const logoutMutation = useMutation({
-    mutationFn: async () => {
-      await apiRequest("POST", "/api/auth/logout");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-    },
-  });
+  const { user } = useAuth();
 
   return (
     <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-xl">
@@ -70,13 +56,13 @@ function Header() {
                   data-testid="link-nav-account"
                 >
                   <User className="mr-1 h-3.5 w-3.5" />
-                  {user.name}
+                  {user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email}
                 </Button>
               </Link>
               <Button
                 size="icon"
                 variant="ghost"
-                onClick={() => logoutMutation.mutate()}
+                onClick={() => { window.location.href = "/api/logout"; }}
                 className="hidden md:inline-flex"
                 data-testid="button-nav-logout"
               >
@@ -84,7 +70,7 @@ function Header() {
               </Button>
             </>
           ) : (
-            <Link href="/auth/login">
+            <a href="/api/login">
               <Button
                 variant="ghost"
                 size="sm"
@@ -94,7 +80,7 @@ function Header() {
                 <LogIn className="mr-1 h-3.5 w-3.5" />
                 Sign In
               </Button>
-            </Link>
+            </a>
           )}
           <Button
             size="icon"
@@ -140,7 +126,7 @@ function Header() {
               <Button
                 variant="ghost"
                 className="w-full justify-start text-muted-foreground"
-                onClick={() => { logoutMutation.mutate(); setMobileOpen(false); }}
+                onClick={() => { window.location.href = "/api/logout"; }}
                 data-testid="button-mobile-logout"
               >
                 <LogOut className="mr-2 h-4 w-4" />
@@ -148,12 +134,12 @@ function Header() {
               </Button>
             </>
           ) : (
-            <Link href="/auth/login" onClick={() => setMobileOpen(false)}>
+            <a href="/api/login" onClick={() => setMobileOpen(false)}>
               <Button variant="ghost" className="w-full justify-start" data-testid="link-mobile-signin">
                 <LogIn className="mr-2 h-4 w-4" />
                 Sign In
               </Button>
-            </Link>
+            </a>
           )}
         </nav>
       )}

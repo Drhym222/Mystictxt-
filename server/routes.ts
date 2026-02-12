@@ -1,12 +1,11 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
-import session from "express-session";
 import { storage } from "./storage";
 import { seedDatabase } from "./seed";
-import { insertServiceSchema, insertOrderIntakeSchema, insertTestimonialSchema, insertFaqSchema, type Client } from "@shared/schema";
+import { setupAuth, registerAuthRoutes, isAuthenticated } from "./replit_integrations/auth";
+import { insertServiceSchema, insertOrderIntakeSchema, insertTestimonialSchema, insertFaqSchema } from "@shared/schema";
 import { z } from "zod";
 import crypto from "crypto";
-import MemoryStore from "memorystore";
 
 function hashPassword(password: string): string {
   return crypto.createHash("sha256").update(password).digest("hex");
@@ -14,24 +13,28 @@ function hashPassword(password: string): string {
 
 declare module "express-session" {
   interface SessionData {
-    userId?: number;
-    clientId?: number;
-    clientEmail?: string;
+    adminUserId?: number;
   }
 }
 
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  if (!req.session.userId) {
+  if (!req.session.adminUserId) {
     return res.status(401).json({ message: "Unauthorized" });
   }
   next();
 }
 
-function requireClient(req: Request, res: Response, next: NextFunction) {
-  if (!req.session.clientId) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
-  next();
+function getUserEmail(req: Request): string | null {
+  const user = req.user as any;
+  return user?.claims?.email || null;
+}
+
+function getUserName(req: Request): string | null {
+  const user = req.user as any;
+  if (!user?.claims) return null;
+  const first = user.claims.first_name || "";
+  const last = user.claims.last_name || "";
+  return `${first} ${last}`.trim() || user.claims.email || null;
 }
 
 const createOrderSchema = z.object({
@@ -87,22 +90,8 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  const SessionStore = MemoryStore(session);
-
-  app.use(
-    session({
-      secret: process.env.SESSION_SECRET || "mystictxt-secret-key",
-      resave: false,
-      saveUninitialized: false,
-      store: new SessionStore({ checkPeriod: 86400000 }),
-      cookie: {
-        maxAge: 24 * 60 * 60 * 1000,
-        httpOnly: true,
-        secure: false,
-        sameSite: "lax",
-      },
-    })
-  );
+  await setupAuth(app);
+  registerAuthRoutes(app);
 
   await seedDatabase();
 
@@ -211,7 +200,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
       }
 
-      const email = req.session.clientEmail || parsed.data.email;
+      const email = getUserEmail(req) || parsed.data.email;
       if (!email) return res.status(401).json({ message: "Please sign in to add credits" });
       const wallet = await storage.getOrCreateWallet(email);
       await storage.createWalletTransaction({
@@ -229,7 +218,7 @@ export async function registerRoutes(
 
   app.get("/api/account", async (req, res) => {
     try {
-      const email = req.session.clientEmail;
+      const email = getUserEmail(req);
       if (!email) return res.status(401).json({ message: "Not authenticated" });
       const wallet = await storage.getOrCreateWallet(email);
       const transactions = await storage.getWalletTransactions(wallet.id);
@@ -247,7 +236,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
       }
 
-      const email = req.session.clientEmail || parsed.data.email;
+      const email = getUserEmail(req) || parsed.data.email;
       if (!email) return res.status(401).json({ message: "Please sign in to start a chat session" });
       const costPerMinute = 299;
       const totalCost = costPerMinute * parsed.data.durationMinutes;
@@ -359,79 +348,11 @@ export async function registerRoutes(
     }
   });
 
-  const registerSchema = z.object({
-    name: z.string().min(1),
-    email: z.string().email(),
-    password: z.string().min(6),
-  });
-
-  app.post("/api/auth/register", async (req, res) => {
+  app.get("/api/client/orders", isAuthenticated, async (req: any, res) => {
     try {
-      const parsed = registerSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid input" });
-      }
-      const { name, email, password } = parsed.data;
-
-      const existing = await storage.getClientByEmail(email);
-      if (existing) {
-        return res.status(409).json({ message: "Email already registered" });
-      }
-
-      const client = await storage.createClient({
-        name,
-        email,
-        passwordHash: hashPassword(password),
-      });
-
-      req.session.clientId = client.id;
-      req.session.clientEmail = client.email;
-      res.json({ id: client.id, name: client.name, email: client.email });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message || "Registration failed" });
-    }
-  });
-
-  app.post("/api/auth/login", async (req, res) => {
-    try {
-      const { email, password } = req.body;
-      if (!email || !password) {
-        return res.status(400).json({ message: "Email and password are required" });
-      }
-
-      const client = await storage.getClientByEmail(email);
-      if (!client || client.passwordHash !== hashPassword(password)) {
-        return res.status(401).json({ message: "Invalid email or password" });
-      }
-
-      req.session.clientId = client.id;
-      req.session.clientEmail = client.email;
-      res.json({ id: client.id, name: client.name, email: client.email });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
-    }
-  });
-
-  app.post("/api/auth/logout", (req, res) => {
-    req.session.destroy(() => {
-      res.json({ ok: true });
-    });
-  });
-
-  app.get("/api/auth/me", async (req, res) => {
-    if (!req.session.clientId) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    const client = await storage.getClientById(req.session.clientId);
-    if (!client) {
-      return res.status(401).json({ message: "Client not found" });
-    }
-    res.json({ id: client.id, name: client.name, email: client.email });
-  });
-
-  app.get("/api/client/orders", requireClient, async (req, res) => {
-    try {
-      const orders = await storage.getOrdersByEmail(req.session.clientEmail!);
+      const email = getUserEmail(req);
+      if (!email) return res.status(401).json({ message: "Not authenticated" });
+      const orders = await storage.getOrdersByEmail(email);
       res.json(orders);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -445,12 +366,12 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Email and password are required" });
       }
 
-      const user = await storage.getUserByEmail(email);
+      const user = await storage.getAdminUserByEmail(email);
       if (!user || user.passwordHash !== hashPassword(password)) {
         return res.status(401).json({ message: "Invalid email or password" });
       }
 
-      req.session.userId = user.id;
+      req.session.adminUserId = user.id;
       res.json({ id: user.id, email: user.email, role: user.role });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -464,10 +385,10 @@ export async function registerRoutes(
   });
 
   app.get("/api/admin/me", async (req, res) => {
-    if (!req.session.userId) {
+    if (!req.session.adminUserId) {
       return res.status(401).json({ message: "Not authenticated" });
     }
-    const user = await storage.getUserById(req.session.userId);
+    const user = await storage.getAdminUserById(req.session.adminUserId);
     if (!user) {
       return res.status(401).json({ message: "User not found" });
     }

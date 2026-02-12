@@ -1,9 +1,9 @@
 import { db } from "./db";
 import { eq, desc, sql, and, gt, asc } from "drizzle-orm";
 import {
-  users, services, orders, orderIntake, testimonials, faqItems,
-  wallets, walletTransactions, chatSessions, chatMessages, clients,
-  type InsertUser, type User,
+  adminUsers, services, orders, orderIntake, testimonials, faqItems,
+  wallets, walletTransactions, chatSessions, chatMessages,
+  type InsertAdminUser, type AdminUser,
   type InsertService, type Service,
   type InsertOrder, type Order,
   type InsertOrderIntake, type OrderIntake,
@@ -13,13 +13,12 @@ import {
   type InsertWalletTransaction, type WalletTransaction,
   type InsertChatSession, type ChatSession,
   type InsertChatMessage, type ChatMessage,
-  type InsertClient, type Client,
 } from "@shared/schema";
 
 export interface IStorage {
-  getUserById(id: number): Promise<User | undefined>;
-  getUserByEmail(email: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  getAdminUserById(id: number): Promise<AdminUser | undefined>;
+  getAdminUserByEmail(email: string): Promise<AdminUser | undefined>;
+  createAdminUser(user: InsertAdminUser): Promise<AdminUser>;
 
   getServices(activeOnly?: boolean): Promise<Service[]>;
   getServiceBySlug(slug: string): Promise<Service | undefined>;
@@ -61,9 +60,6 @@ export interface IStorage {
   getChatMessages(sessionId: number, sinceId?: number): Promise<ChatMessage[]>;
   createChatMessage(m: InsertChatMessage): Promise<ChatMessage>;
 
-  getClientByEmail(email: string): Promise<Client | undefined>;
-  getClientById(id: number): Promise<Client | undefined>;
-  createClient(client: InsertClient): Promise<Client>;
   getOrdersByEmail(email: string): Promise<(Order & { serviceTitle?: string })[]>;
 
   getStats(): Promise<{
@@ -80,18 +76,18 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  async getUserById(id: number): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
+  async getAdminUserById(id: number): Promise<AdminUser | undefined> {
+    const [user] = await db.select().from(adminUsers).where(eq(adminUsers.id, id));
     return user;
   }
 
-  async getUserByEmail(email: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.email, email));
+  async getAdminUserByEmail(email: string): Promise<AdminUser | undefined> {
+    const [user] = await db.select().from(adminUsers).where(eq(adminUsers.email, email));
     return user;
   }
 
-  async createUser(user: InsertUser): Promise<User> {
-    const [created] = await db.insert(users).values(user).returning();
+  async createAdminUser(user: InsertAdminUser): Promise<AdminUser> {
+    const [created] = await db.insert(adminUsers).values(user).returning();
     return created;
   }
 
@@ -297,21 +293,6 @@ export class DatabaseStorage implements IStorage {
 
   async createChatMessage(m: InsertChatMessage): Promise<ChatMessage> {
     const [created] = await db.insert(chatMessages).values(m).returning();
-    return created;
-  }
-
-  async getClientByEmail(email: string): Promise<Client | undefined> {
-    const [client] = await db.select().from(clients).where(eq(clients.email, email));
-    return client;
-  }
-
-  async getClientById(id: number): Promise<Client | undefined> {
-    const [client] = await db.select().from(clients).where(eq(clients.id, id));
-    return client;
-  }
-
-  async createClient(client: InsertClient): Promise<Client> {
-    const [created] = await db.insert(clients).values(client).returning();
     return created;
   }
 

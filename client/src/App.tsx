@@ -19,8 +19,6 @@ import Account from "@/pages/account";
 import AccountWallet from "@/pages/account/wallet";
 import AccountOrders from "@/pages/account/orders";
 import Chat from "@/pages/chat";
-import AuthLogin from "@/pages/auth/login";
-import AuthRegister from "@/pages/auth/register";
 import AdminLogin from "@/pages/admin/login";
 import AdminLayout from "@/pages/admin/admin-layout";
 import AdminDashboard from "@/pages/admin/dashboard";
@@ -75,18 +73,9 @@ function AdminPages() {
 
 function AppRouter() {
   const [location] = useLocation();
-  const isAuthPage = location.startsWith("/auth");
   const isAdminLogin = location === "/admin/login";
   const isAdmin = location.startsWith("/admin");
 
-  if (isAuthPage) {
-    return (
-      <Switch>
-        <Route path="/auth/login" component={AuthLogin} />
-        <Route path="/auth/register" component={AuthRegister} />
-      </Switch>
-    );
-  }
   if (isAdminLogin) return <AdminLogin />;
   if (isAdmin) return <AdminPages />;
   return <PublicPages />;

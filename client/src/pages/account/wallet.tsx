@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Link, Redirect } from "wouter";
+import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,7 @@ import {
   CreditCard, Plus, History, ArrowLeft, Wallet,
 } from "lucide-react";
 import type { Wallet as WalletType, WalletTransaction } from "@shared/schema";
+import { useAuth } from "@/hooks/use-auth";
 
 function formatPrice(cents: number) {
   return `$${(Math.abs(cents) / 100).toFixed(2)}`;
@@ -34,11 +35,7 @@ const creditPackages = [
 
 export default function AccountWallet() {
   const { toast } = useToast();
-
-  const { data: user, isLoading: userLoading } = useQuery<{ id: number; name: string; email: string } | null>({
-    queryKey: ["/api/auth/me"],
-    queryFn: getQueryFn({ on401: "returnNull" }),
-  });
+  const { user, isLoading: userLoading } = useAuth();
 
   const { data: accountData, isLoading } = useQuery<{
     wallet: WalletType;
@@ -73,7 +70,8 @@ export default function AccountWallet() {
   }
 
   if (!user) {
-    return <Redirect to="/auth/login" />;
+    window.location.href = "/api/login";
+    return null;
   }
 
   return (
