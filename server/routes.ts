@@ -106,46 +106,20 @@ export async function registerRoutes(
 
   await seedDatabase();
 
-  const ADMIN_PANEL_URL = "https://mystic-text-panel.replit.app";
-  const PANEL_API_KEY = process.env.MYSTICTXT_API_KEY || "";
-
-  async function fetchFromPanel(endpoint: string) {
-    const res = await fetch(`${ADMIN_PANEL_URL}${endpoint}`, {
-      headers: { "x-api-key": PANEL_API_KEY },
-    });
-    if (!res.ok) throw new Error(`Panel API error: ${res.status}`);
-    return res.json();
-  }
-
   app.get("/api/services", async (_req, res) => {
-    try {
-      const services = await fetchFromPanel("/api/public/services");
-      res.json(services);
-    } catch {
-      const svcs = await storage.getServices(true);
-      res.json(svcs);
-    }
+    const svcs = await storage.getServices(true);
+    res.json(svcs);
   });
 
   app.get("/api/services/:slug", async (req, res) => {
-    try {
-      const services = await fetchFromPanel("/api/public/services");
-      const service = services.find((s: any) => s.slug === req.params.slug);
-      if (service) return res.json(service);
-    } catch {}
     const service = await storage.getServiceBySlug(req.params.slug);
     if (!service) return res.status(404).json({ message: "Service not found" });
     res.json(service);
   });
 
   app.get("/api/testimonials", async (_req, res) => {
-    try {
-      const testimonials = await fetchFromPanel("/api/public/testimonials");
-      res.json(testimonials);
-    } catch {
-      const t = await storage.getTestimonials(true);
-      res.json(t);
-    }
+    const t = await storage.getTestimonials(true);
+    res.json(t);
   });
 
   app.get("/api/faq", async (_req, res) => {
